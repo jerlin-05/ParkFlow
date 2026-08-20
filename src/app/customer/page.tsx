@@ -12,6 +12,7 @@ import { useRealtime } from "@/hooks/useRealtime";
 import type { Slot } from "@/lib/types";
 import { clsx } from "@/lib/clsx";
 import Msg91Otp from "@/components/Msg91Otp";
+import { TicketArt } from "@/components/ui/RoleArt";
 
 type WizardState = {
   vehicle: string;
@@ -532,18 +533,21 @@ export default function CustomerPage() {
       </nav>
 
       <header className="border-b border-line px-6 pb-14 pt-20 md:pt-24">
-        <div className="mx-auto max-w-6xl">
-          <span className="inline-flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.14em] text-amber">
-            <span className="h-[7px] w-[7px] rounded-full bg-amber shadow-glow" />
-            Live booking · Lulu Mall Lot A, Kochi
-          </span>
-          <h1 className="mt-4 max-w-2xl font-display text-[clamp(32px,4.6vw,50px)] font-black leading-[1.06]">
-            Reserve your <em className="text-green not-italic">parking slot</em> before you arrive.
-          </h1>
-          <p className="mt-3 max-w-lg text-[16px] text-mist">
-            Enter your vehicle and mobile number, verify by OTP, and get a fixed slot with a QR
-            ticket — synced live with the gate and security teams.
-          </p>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-8">
+          <div>
+            <span className="inline-flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.14em] text-amber">
+              <span className="h-[7px] w-[7px] rounded-full bg-amber shadow-glow" />
+              Live booking · Lulu Mall Lot A, Kochi
+            </span>
+            <h1 className="mt-4 max-w-2xl font-display text-[clamp(32px,4.6vw,50px)] font-black leading-[1.06]">
+              Reserve your <em className="text-green not-italic">parking slot</em> before you arrive.
+            </h1>
+            <p className="mt-3 max-w-lg text-[16px] text-mist">
+              Enter your vehicle and mobile number, verify by OTP, and get a fixed slot with a QR
+              ticket — synced live with the gate and security teams.
+            </p>
+          </div>
+          <TicketArt className="hidden h-28 w-40 flex-shrink-0 text-green md:block" />
         </div>
       </header>
 

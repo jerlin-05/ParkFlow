@@ -7,6 +7,86 @@ interface Msg91OtpProps {
   onVerified: (data: unknown) => void;
 }
 
+// Module-level (not component-level) state: the MSG91 script registers a
+// `<h-captcha>` custom element as a side effect, and customElements.define()
+// can only ever run once per tag name for the lifetime of the page. If this
+// component unmounts/remounts (e.g. Back → Continue, or React Strict Mode's
+// mount-unmount-remount in dev) and re-injects the script, the second run
+// throws NotSupportedError and silently breaks window.sendOtp/verifyOtp,
+// which is why you'd see "MSG91 OTP service is unavailable". So: load the
+// script at most once for the whole page lifetime, and never remove it.
+let msg91ScriptState: "idle" | "loading" | "ready" | "error" = "idle";
+let msg91ScriptListeners: Array<(ok: boolean) => void> = [];
+
+function loadMsg91Script(onDone: (ok: boolean) => void) {
+  if (msg91ScriptState === "ready") {
+    onDone(true);
+    return;
+  }
+  if (msg91ScriptState === "error") {
+    onDone(false);
+    return;
+  }
+  if (msg91ScriptState === "loading") {
+    msg91ScriptListeners.push(onDone);
+    return;
+  }
+
+  msg91ScriptState = "loading";
+  msg91ScriptListeners.push(onDone);
+
+  const script = document.createElement("script");
+  script.src = "https://verify.msg91.com/otp-provider.js";
+  script.type = "text/javascript";
+  script.async = true;
+
+  script.onload = () => {
+    msg91ScriptState = "ready";
+    msg91ScriptListeners.forEach((cb) => cb(true));
+    msg91ScriptListeners = [];
+  };
+
+  script.onerror = () => {
+    msg91ScriptState = "error";
+    msg91ScriptListeners.forEach((cb) => cb(false));
+    msg91ScriptListeners = [];
+  };
+
+  document.body.appendChild(script);
+  // Deliberately never removed: MSG91's script has permanent page-level side
+  // effects (custom element registration), so it must only ever run once.
+}
+
+// Minimum time between OTP sends for the same mobile number. Persisted in
+// sessionStorage (not component state) so it survives this component
+// unmounting/remounting — e.g. clicking Back then Continue again no longer
+// fires another real send to MSG91 within the cooldown window. This is what
+// was tripping MSG91's own per-IP throttle during normal testing.
+const RESEND_COOLDOWN_SECONDS = 45;
+
+function msg91CooldownKey(mobile: string) {
+  return `parkflow_msg91_last_sent_${mobile}`;
+}
+
+function getMsg91CooldownRemaining(mobile: string): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const last = Number(sessionStorage.getItem(msg91CooldownKey(mobile)) || 0);
+    const elapsed = (Date.now() - last) / 1000;
+    return Math.max(0, Math.ceil(RESEND_COOLDOWN_SECONDS - elapsed));
+  } catch {
+    return 0;
+  }
+}
+
+function markMsg91Sent(mobile: string) {
+  try {
+    sessionStorage.setItem(msg91CooldownKey(mobile), String(Date.now()));
+  } catch {
+    // sessionStorage unavailable (e.g. privacy mode) — cooldown just won't persist
+  }
+}
+
 export default function Msg91Otp({
   mobile,
   onVerified,
@@ -16,16 +96,19 @@ export default function Msg91Otp({
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [cooldown, setCooldown] = useState(0);
 
   const otpSentRef = useRef(false);
 
   /*
-   * Load MSG91 SDK
+   * Load MSG91 SDK (once per page — see loadMsg91Script above)
    */
   useEffect(() => {
-    let script: HTMLScriptElement | null = null;
+    let cancelled = false;
 
     const initialize = () => {
+      if (cancelled) return;
+
       const widgetId =
         process.env.NEXT_PUBLIC_MSG91_WIDGET_ID;
 
@@ -92,33 +175,30 @@ export default function Msg91Otp({
       }
     };
 
-    script = document.createElement("script");
-
-    script.src =
-      "https://verify.msg91.com/otp-provider.js";
-
-    script.type = "text/javascript";
-    script.async = true;
-
-    script.onload = initialize;
-
-    script.onerror = () => {
-      setError(
-        "Unable to load MSG91 OTP service."
-      );
-    };
-
-    document.body.appendChild(script);
+    loadMsg91Script((ok) => {
+      if (cancelled) return;
+      if (ok) {
+        initialize();
+      } else {
+        setError("Unable to load MSG91 OTP service.");
+      }
+    });
 
     return () => {
-      if (
-        script &&
-        document.body.contains(script)
-      ) {
-        document.body.removeChild(script);
-      }
+      cancelled = true;
     };
   }, []);
+
+  /*
+   * Tick the resend cooldown down once a second while it's active
+   */
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => {
+      setCooldown((c) => Math.max(0, c - 1));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
 
   /*
    * Automatically send OTP when Step 2 opens
@@ -127,6 +207,16 @@ export default function Msg91Otp({
     if (!loaded) return;
     if (!mobile) return;
     if (otpSentRef.current) return;
+
+    const remaining = getMsg91CooldownRemaining(mobile);
+    if (remaining > 0) {
+      // Already sent one recently (e.g. this is a remount from Back →
+      // Continue) — don't fire another real request, just reflect the
+      // existing cooldown in the UI.
+      otpSentRef.current = true;
+      setCooldown(remaining);
+      return;
+    }
 
     sendOtp();
 
@@ -154,6 +244,12 @@ export default function Msg91Otp({
       return;
     }
 
+    const remaining = getMsg91CooldownRemaining(mobile);
+    if (remaining > 0) {
+      setCooldown(remaining);
+      return;
+    }
+
     if (
       typeof window.sendOtp !== "function"
     ) {
@@ -174,6 +270,9 @@ export default function Msg91Otp({
       "Sending MSG91 OTP to:",
       identifier
     );
+
+    markMsg91Sent(mobile);
+    setCooldown(RESEND_COOLDOWN_SECONDS);
 
     window.sendOtp(
       identifier,
@@ -198,9 +297,16 @@ export default function Msg91Otp({
 
         setSending(false);
 
-        setError(
-          "Unable to send OTP. Please try again."
-        );
+        const errObj = error as { message?: string; code?: string } | undefined;
+        if (errObj?.code === "408" || errObj?.message === "IPBlocked") {
+          setError(
+            "MSG91 has temporarily rate-limited this network for too many OTP requests. Please wait a few minutes before trying again."
+          );
+        } else {
+          setError(
+            "Unable to send OTP. Please try again."
+          );
+        }
       }
     );
   }
@@ -342,6 +448,22 @@ export default function Msg91Otp({
           />
         ))}
 
+      </div>
+
+      {/* Resend control */}
+      <div className="text-center text-[13px] text-mist">
+        {cooldown > 0 ? (
+          <span>Resend OTP in {cooldown}s</span>
+        ) : (
+          <button
+            type="button"
+            onClick={sendOtp}
+            disabled={sending}
+            className="font-medium text-amber underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            Resend OTP
+          </button>
+        )}
       </div>
 
       {/* Verify button */}

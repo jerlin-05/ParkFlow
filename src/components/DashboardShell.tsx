@@ -51,7 +51,7 @@ export function DashboardShell({
           <ConnStatus connected={connected} />
         </div>
 
-        <nav className="flex flex-col gap-1">
+        <nav className="flex flex-col gap-0.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = activePanel === item.key;
@@ -60,13 +60,20 @@ export function DashboardShell({
                 key={item.key}
                 onClick={() => onNavigate(item.key)}
                 className={clsx(
-                  "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] transition-colors",
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] transition-all duration-150",
                   active
-                    ? "bg-panel text-fog shadow-[inset_3px_0_0_#f5b700]"
+                    ? "bg-amber/[0.1] text-fog"
                     : "text-mist hover:bg-panel/70 hover:text-fog"
                 )}
               >
-                <Icon size={16} strokeWidth={2} className={active ? "text-amber" : "text-mist-dim"} />
+                <span
+                  className={clsx(
+                    "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                    active ? "bg-amber/15" : "bg-transparent"
+                  )}
+                >
+                  <Icon size={15} strokeWidth={2} className={active ? "text-amber" : "text-mist-dim"} />
+                </span>
                 {item.label}
               </button>
             );

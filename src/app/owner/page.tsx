@@ -6,6 +6,7 @@ import { DashboardShell, NavItem } from "@/components/DashboardShell";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
+import { TrendChart } from "@/components/ui/TrendChart";
 import { Toast } from "@/components/ui/Toast";
 import { useRealtime } from "@/hooks/useRealtime";
 import type { Booking, Employee, HardwareItem, Incident, Stats } from "@/lib/types";
@@ -235,6 +236,18 @@ export default function OwnerPage() {
   }, {});
   const employeeRevenueList = Object.values(employeeRevenue);
 
+  // Real hourly revenue trend, bucketed from each booking's actual createdAt —
+  // no synthetic data. Shows the last 12 hours up to and including the
+  // current hour so the chart always ends "now".
+  const currentHour = new Date().getHours();
+  const hourlyRevenue = Array.from({ length: 12 }, (_, i) => {
+    const hour = (currentHour - 11 + i + 24) % 24;
+    const total = bookings
+      .filter((b) => new Date(b.createdAt).getHours() === hour)
+      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+    return { label: String(hour).padStart(2, "0") + "h", value: total };
+  });
+
   return (
     <DashboardShell
       title={panelTitles[panel]}
@@ -256,6 +269,14 @@ export default function OwnerPage() {
 
       {panel === "overview" && (
         <div className="flex flex-col gap-5">
+          <div className="rounded-2xl border border-line-strong bg-panel p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-[15px] font-semibold">Revenue by hour</h3>
+              <span className="font-mono text-[11px] text-mist-dim">last 12 hours · today</span>
+            </div>
+            <TrendChart data={hourlyRevenue} toneClass="text-green" valuePrefix="₹" />
+          </div>
+
           <div className="grid gap-5 lg:grid-cols-2">
 
             {/* REVENUE SOURCE */}
