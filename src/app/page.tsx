@@ -204,7 +204,6 @@ export default function Home() {
       <footer className="border-t border-line px-6 py-9">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 text-[13px] text-mist-dim">
           <span>ParkFlow — Smart Parking Operating System</span>
-          <span>Built with Next.js &amp; TypeScript · all five dashboards share one live data store</span>
         </div>
       </footer>
     </div>
